@@ -1,24 +1,88 @@
 ﻿using System;
 using System.Windows.Forms;
 using Excel = Microsoft.Office.Interop.Excel;
-using System.Reflection;
+using System.Data;
+using System.IO;
+
 
 namespace InventurUpdater
 {
-    public partial class Form1 : Form
+    public partial class frmInventurUpdater : Form
     {
-        public Form1()
+        Excel.Application oXL;
+        Excel._Workbook oWB;
+        Excel._Worksheet oSheet;
+
+        string pathNr = System.AppContext.BaseDirectory + "STI-Inventur-ArtikelNr_Datenbank.xml";
+        System.Data.DataTable dtNr;
+        DataSet dsNr;
+
+        public frmInventurUpdater()
         {
             InitializeComponent();
         }
 
-
-        private void ButSelectFile_Click(object sender, EventArgs e)
+        private void frmInventurUpdater_Load(object sender, EventArgs e)
         {
-            Excel.Application oXL;
-            Excel._Workbook oWB;
-            Excel._Worksheet oSheet;
-            Excel.Range oRng;
+            openFileDialogExcel.InitialDirectory = System.AppContext.BaseDirectory;
+            Open_NrDB();
+        }
+
+
+
+
+        private void Open_NrDB()
+        {
+            try
+            {
+            dsNr = new DataSet("Root");
+
+            if (File.Exists(pathNr))
+            {
+                dsNr.ReadXml(pathNr, XmlReadMode.ReadSchema);
+                dtNr = dsNr.Tables[0];
+            }
+            else
+            {
+                dtNr = new System.Data.DataTable("dt");
+
+                dtNr.Columns.Add("ArtikelNr", typeof(string));
+                dtNr.Columns.Add("LfdNr", typeof(int));
+                dsNr.Tables.Add(dtNr);
+            }
+            grdNr.DataSource = dtNr;
+
+            grdNr.Columns["ArtikelNr"].Width = 203;
+            grdNr.Columns["LfdNr"].Width = 80;
+            }
+            catch (Exception theException)
+            {
+                string errorMessage = String.Concat(theException.Message, theException.Source);
+                MessageBox.Show(errorMessage, "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
+
+
+        private void Save_NrDB()
+        {
+            try
+            {
+                if (dsNr != null)
+                    dsNr.WriteXml(pathNr, XmlWriteMode.WriteSchema);
+            }
+            catch (Exception theException)
+            {
+                string errorMessage = String.Concat(theException.Message, theException.Source);
+                MessageBox.Show(errorMessage, "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
+
+
+
+
+        private void ButOpenInvList_Click(object sender, EventArgs e)
+        {
+
 
             try
             {
@@ -34,186 +98,134 @@ namespace InventurUpdater
                     // Datei öffnen und aktives Blatt und benutzten Bereich auswählen
                     oWB = oXL.Workbooks.Open(openFileDialogExcel.FileName);
                     oSheet = (Excel._Worksheet)oWB.ActiveSheet;
-                    oRng = oSheet.UsedRange;
-
                 }
             }
             catch (Exception theException)
             {
-                String errorMessage;
-                errorMessage = "Error: ";
-                errorMessage = String.Concat(errorMessage, theException.Message);
-                errorMessage = String.Concat(errorMessage, " Line: ");
-                errorMessage = String.Concat(errorMessage, theException.Source);
-
-                MessageBox.Show(errorMessage, "Error");
+                string errorMessage = String.Concat(theException.Message, theException.Source);
+                MessageBox.Show(errorMessage, "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
         }
 
-
-
-        private void TEST_Button1_Click(object sender, EventArgs e)
+        private Int32 getLfdNr(string ArtNr)
         {
-            Excel.Application oXL;
-            Excel._Workbook oWB;
-            Excel._Worksheet oSheet;
-            Excel.Range oRng;
+            Int32 LfdNr = 0;
+            try
+            {
+
+                // ArtikelNr suchen
+                DataRow[] rows = dtNr.Select("ArtikelNr='" + ArtNr + "'");
+
+                // ArtikelNr existiert in der Liste: dessen laufende Nummer zurückgeben.
+                if (rows.Length > 0)
+                {
+                    LfdNr = (Int32)rows[0][1];
+                }
+
+                // Artikelnummer fehlt in der Liste: neuen Artikel einfügen mit der nächste freien laufenden Nummer.
+                else
+                {
+                    // Höchste laufende Nummer ermitteln
+                    int maxLfdNr = 0;
+                    if (dtNr.Rows.Count > 0)
+                    {
+                        maxLfdNr = (int)dtNr.Compute("MAX([LfdNr])", "");
+                    }
+                    LfdNr = maxLfdNr + 1;
+
+                    // Neuen Eintrag einfügen
+                    DataRow newRow = dtNr.NewRow();
+                    newRow[0] = ArtNr;
+                    newRow[1] = LfdNr;
+                    dtNr.Rows.Add(newRow);
+                }
+
+                return LfdNr;
+            }
+            catch (Exception theException)
+            {
+                string errorMessage = String.Concat(theException.Message, theException.Source);
+                MessageBox.Show(errorMessage, "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                return LfdNr;
+            }
+        }
+
+        private void butInvListSave_Click(object sender, EventArgs e)
+        {
+            try
+            {
+                if (oSheet != null)
+                {
+                    oXL.ActiveWorkbook.Save();
+                    oXL.ActiveWorkbook.Close(true);
+                    oSheet = null;
+                    oXL.Quit();
+                }
+            }
+
+            catch (Exception theException)
+            {
+                string errorMessage = String.Concat(theException.Message, theException.Source);
+                MessageBox.Show(errorMessage, "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
+
+        private void butAssignNum_Click(object sender, EventArgs e)
+        {
+            string artNr;
+            Int32 lfdNr;
 
             try
             {
-                //Start Excel and get Application object.
-                oXL = new Excel.Application();
-                oXL.Visible = true;
+                if (oSheet == null)
+                {
+                    MessageBox.Show("Bitte vorher eine Inventurliste öffnen!", "Hinweis", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                }
 
-                //Get a new workbook.
-                oWB = (Excel._Workbook)(oXL.Workbooks.Add(Missing.Value));
-                oSheet = (Excel._Worksheet)oWB.ActiveSheet;
+                else
+                {
+                    Cursor = Cursors.WaitCursor;
+                 
+                    int zeileVon = int.Parse(edStartZeile.Text);
+                    int zeileBis = oSheet.UsedRange.Rows.Count;
 
-                //Add table headers going cell by cell.
-                oSheet.Cells[1, 1] = "First Name";
-                oSheet.Cells[1, 2] = "Last Name";
-                oSheet.Cells[1, 3] = "Full Name";
-                oSheet.Cells[1, 4] = "Salary";
+                    progressBar.Minimum = zeileVon;
+                    progressBar.Maximum = zeileBis;
+                    progressBar.Value = zeileVon;
+                    progressBar.Visible = true;
 
-                //Format A1:D1 as bold, vertical alignment = center.
-                oSheet.get_Range("A1", "D1").Font.Bold = true;
-                oSheet.get_Range("A1", "D1").VerticalAlignment = Excel.XlVAlign.xlVAlignCenter;
+                    int spalteArtNr = int.Parse(edArtSpalte.Text);
+                    int spalteLfdNr = int.Parse(edNrSpalte.Text);
 
-                // Create an array to multiple values at once.
-                string[,] saNames = new string[5, 2];
+                    oSheet.Cells[8, 3].Value = "Laufende Nr";
 
-                saNames[0, 0] = "John";
-                saNames[0, 1] = "Smith";
-                saNames[1, 0] = "Tom";
-                saNames[1, 1] = "Brown";
-                saNames[2, 0] = "Sue";
-                saNames[2, 1] = "Thomas";
-                saNames[3, 0] = "Jane";
-                saNames[3, 1] = "Jones";
-                saNames[4, 0] = "Adam";
-                saNames[4, 1] = "Johnson";
+                    for (int i = zeileVon; i <= zeileBis; i++)
+                    {
+                        artNr = oSheet.Cells[i, spalteArtNr].Value;
+                        if ((artNr != null) & (artNr != ""))
+                        {
+                            lfdNr = getLfdNr(artNr);
+                            oSheet.Cells[i, spalteLfdNr].Value = lfdNr;
+                        }
+                        progressBar.PerformStep();
+                    }
 
-                //Fill A2:B6 with an array of values (First and Last Names).
-                oSheet.get_Range("A2", "B6").Value2 = saNames;
-
-                //Fill C2:C6 with a relative formula (=A2 & " " & B2).
-                oRng = oSheet.get_Range("C2", "C6");
-                oRng.Formula = "=A2 & \" \" & B2";
-
-                //Fill D2:D6 with a formula(=RAND()*100000) and apply format.
-                oRng = oSheet.get_Range("D2", "D6");
-                oRng.Formula = "=RAND()*100000";
-                oRng.NumberFormat = "$0.00";
-
-                //AutoFit columns A:D.
-                oRng = oSheet.get_Range("A1", "D1");
-                oRng.EntireColumn.AutoFit();
-
-                //Manipulate a variable number of columns for Quarterly Sales Data.
-                TEST_DisplayQuarterlySales(oSheet);
-
-                //Make sure Excel is visible and give the user control
-                //of Microsoft Excel's lifetime.
-                oXL.Visible = true;
-                oXL.UserControl = true;
+                    Save_NrDB();
+                    progressBar.Visible = false;
+                }
             }
             catch (Exception theException)
             {
-                String errorMessage;
-                errorMessage = "Error: ";
-                errorMessage = String.Concat(errorMessage, theException.Message);
-                errorMessage = String.Concat(errorMessage, " Line: ");
-                errorMessage = String.Concat(errorMessage, theException.Source);
-
-                MessageBox.Show(errorMessage, "Error");
+                Cursor = Cursors.Default;
+                string errorMessage = String.Concat(theException.Message, theException.Source);
+                MessageBox.Show(errorMessage, "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+            finally
+            {
+                Cursor = Cursors.Default;
+                progressBar.Visible = false;
             }
         }
-
-
-        private void TEST_DisplayQuarterlySales(Excel._Worksheet oWS)
-            {
-                Excel._Workbook oWB;
-                Excel.Series oSeries;
-                Excel.Range oResizeRange;
-                Excel._Chart oChart;
-                String sMsg;
-                int iNumQtrs;
-
-                //Determine how many quarters to display data for.
-                for (iNumQtrs = 4; iNumQtrs >= 2; iNumQtrs--)
-                {
-                    sMsg = "Enter sales data for ";
-                    sMsg = String.Concat(sMsg, iNumQtrs);
-                    sMsg = String.Concat(sMsg, " quarter(s)?");
-
-                    DialogResult iRet = MessageBox.Show(sMsg, "Quarterly Sales?",
-                    MessageBoxButtons.YesNo);
-                    if (iRet == DialogResult.Yes)
-                        break;
-                }
-
-                sMsg = "Displaying data for ";
-                sMsg = String.Concat(sMsg, iNumQtrs);
-                sMsg = String.Concat(sMsg, " quarter(s).");
-
-                MessageBox.Show(sMsg, "Quarterly Sales");
-
-                //Starting at E1, fill headers for the number of columns selected.
-                oResizeRange = oWS.get_Range("E1", "E1").get_Resize(Missing.Value, iNumQtrs);
-                oResizeRange.Formula = "=\"Q\" & COLUMN()-4 & CHAR(10) & \"Sales\"";
-
-                //Change the Orientation and WrapText properties for the headers.
-                oResizeRange.Orientation = 38;
-                oResizeRange.WrapText = true;
-
-                //Fill the interior color of the headers.
-                oResizeRange.Interior.ColorIndex = 36;
-
-                //Fill the columns with a formula and apply a number format.
-                oResizeRange = oWS.get_Range("E2", "E6").get_Resize(Missing.Value, iNumQtrs);
-                oResizeRange.Formula = "=RAND()*100";
-                oResizeRange.NumberFormat = "$0.00";
-
-                //Apply borders to the Sales data and headers.
-                oResizeRange = oWS.get_Range("E1", "E6").get_Resize(Missing.Value, iNumQtrs);
-                oResizeRange.Borders.Weight = Excel.XlBorderWeight.xlThin;
-
-                //Add a Totals formula for the sales data and apply a border.
-                oResizeRange = oWS.get_Range("E8", "E8").get_Resize(Missing.Value, iNumQtrs);
-                oResizeRange.Formula = "=SUM(E2:E6)";
-                oResizeRange.Borders.get_Item(Excel.XlBordersIndex.xlEdgeBottom).LineStyle
-                = Excel.XlLineStyle.xlDouble;
-                oResizeRange.Borders.get_Item(Excel.XlBordersIndex.xlEdgeBottom).Weight
-                = Excel.XlBorderWeight.xlThick;
-
-                //Add a Chart for the selected data.
-                oWB = (Excel._Workbook)oWS.Parent;
-                oChart = (Excel._Chart)oWB.Charts.Add(Missing.Value, Missing.Value, Missing.Value, Missing.Value);
-
-                //Use the ChartWizard to create a new chart from the selected data.
-                oResizeRange = oWS.get_Range("E2:E6", Missing.Value).get_Resize(Missing.Value, iNumQtrs);
-                oChart.ChartWizard(oResizeRange, Excel.XlChartType.xl3DColumn, Missing.Value, Excel.XlRowCol.xlColumns, Missing.Value, Missing.Value, Missing.Value, Missing.Value, Missing.Value, Missing.Value, Missing.Value);
-                oSeries = (Excel.Series)oChart.SeriesCollection(1);
-                oSeries.XValues = oWS.get_Range("A2", "A6");
-                for (int iRet = 1; iRet <= iNumQtrs; iRet++)
-                {
-                    oSeries = (Excel.Series)oChart.SeriesCollection(iRet);
-                    String seriesName;
-                    seriesName = "=\"Q";
-                    seriesName = String.Concat(seriesName, iRet);
-                    seriesName = String.Concat(seriesName, "\"");
-                    oSeries.Name = seriesName;
-                }
-
-                oChart.Location(Excel.XlChartLocation.xlLocationAsObject, oWS.Name);
-
-                //Move the chart so as not to cover your data.
-                oResizeRange = (Excel.Range)oWS.Rows.get_Item(10, Missing.Value);
-                oWS.Shapes.Item("Chart 1").Top = (float)(double)oResizeRange.Top;
-                oResizeRange = (Excel.Range)oWS.Columns.get_Item(2, Missing.Value);
-                oWS.Shapes.Item("Chart 1").Left = (float)(double)oResizeRange.Left;
-            }
-
     }
 
 }
